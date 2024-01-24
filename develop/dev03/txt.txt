@@ -6,9 +6,14 @@ computer 3
 mouse 4
 LAPTOP 6
 data 2
+data 2
+data 2
+data 23
 RedHat 1
 laptop 8
 debian 4
 laptop 2
 вовово 43
+вовово 43
+ахахах 23
 ахахах 23
