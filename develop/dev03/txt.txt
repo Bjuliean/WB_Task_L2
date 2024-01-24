@@ -1,0 +1,14 @@
+3 10K february
+1 6 january
+2 1M march
+400 50 april
+computer 3
+mouse 4
+LAPTOP 6
+data 2
+RedHat 1
+laptop 8
+debian 4
+laptop 2
+вовово 43
+ахахах 23
