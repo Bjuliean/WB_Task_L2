@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -38,14 +37,10 @@ import (
 */
 
 type FlagsValue struct {
-	K *int
-	N *bool
-	R *bool
-	U *bool
-	M *bool
-	B *bool
-	C *bool
-	H *bool
+	K int
+	N bool
+	R bool
+	U bool
 }
 
 // Поскольку в задании не сказано про то, какие символы могут быть в файле,
@@ -71,7 +66,7 @@ func (c *CompareK) Compare(i, j int, s *StringBuffer) bool {
 	b := unicode.ToLower(s.Arr[j].Str[s.SortColNum][0])
 
 	if a == b {
-		if len(s.Arr[i].Str) == len(s.Arr[j].Str) && len(s.Arr[j].Str) > 1 {
+		if CountSymbols(s.Arr[i].Str) == CountSymbols(s.Arr[j].Str) && len(s.Arr[j].Str) > 1 {
 			for z := 1; z < len(s.Arr[i].Str) && z < len(s.Arr[j].Str); z++ {
 				fv := unicode.ToLower(s.Arr[i].Str[z][0])
 				sv := unicode.ToLower(s.Arr[j].Str[z][0])
@@ -81,11 +76,21 @@ func (c *CompareK) Compare(i, j int, s *StringBuffer) bool {
 				}
 			}
 		} else {
-			return len(s.Arr[i].Str[s.SortColNum]) < len(s.Arr[j].Str[s.SortColNum])
+			return CountSymbols(s.Arr[i].Str) < CountSymbols(s.Arr[j].Str)
 		}
 	}
 
 	return a < b
+}
+
+func CountSymbols(str [][]rune) int {
+	res := 0
+
+	for _, v := range str {
+		res += len(v)
+	}
+
+	return res + len(str)
 }
 
 type CompareN struct {
@@ -132,84 +137,98 @@ func (s *StringBuffer) Swap(i int, j int) {
 }
 
 func main() {
-	fv := &FlagsValue{
-		K: flag.Int("k", 1, "указание колонки для сортировки"),
-		N: flag.Bool("n", false, "сортировать по числовому значению"),
-		R: flag.Bool("r", false, "сортировать в обратном порядке"),
-		U: flag.Bool("u", false, "не выводить повторяющиеся строки"),
-		M: flag.Bool("M", false, "сортировать по названию месяца"),
-		B: flag.Bool("b", false, "игнорировать хвостовые пробелы"),
-		C: flag.Bool("c", false, "проверять отсортированы ли данные"),
-		H: flag.Bool("h", false, "сортировать по числовому значению с учётом суффиксов"),
-	}
-
-	flag.Parse()
-	if *fv.K <= 0 {
-		log.Fatal(fmt.Sprintf("sort: field number is zero: invalid field specification '%d'", *fv.K))
-	}
-
-	res, _ := ParseFile("txt.txt")
-
-	SortData(res, fv)
-
-	for _, v := range res.Arr {
-		for _, s := range v.Str {
-			fmt.Print(string(s), " ")
-		}
-		fmt.Printf("\n")
-	}
-
-	// a := []rune("3 10K february")
-	// b := []rune("RedHat 1")
-
-	// c := StringBuffer{
-	// 	Arr: []stringBufferEl{
-	// 		stringBufferEl{
-	// 			StrNum: 0,
-	// 			Str: [][]rune{
-	// 				a,
-	// 			},
-	// 		},
-	// 		stringBufferEl{
-	// 			StrNum: 1,
-	// 			Str: [][]rune{
-	// 				b,
-	// 			},
-	// 		},
-	// 	},
-	// 	SortColNum: 0,
-	// 	LongestCol: 8,
-	// 	Comp: &CompareK{},
-	// }
-
-	// if c.Less(0, 1) {
-	// 	fmt.Println(string(a), "- A IS LESS THAN B -", string(b))
-	// } else {
-	// 	fmt.Println(string(b), "- B IS LESS THAN A -", string(a))
-	// }
+	os.Stdout.WriteString(Sort(os.Args[1]))
 }
 
-func SortData(buffer *StringBuffer, fl *FlagsValue) {
-	buffer.SortColNum = *fl.K - 1
+func Sort(path string) string {
+	fv := InitFlags()
+
+	data, err := ParseFile(path)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	SortProcess(data, fv)
+
+	return Output(data)
+}
+
+func Output(buffer *StringBuffer) string {
+	str := strings.Builder{}
+	str.Grow(len(buffer.Arr) * buffer.LongestCol)
+
+	for i := 0; i < len(buffer.Arr); i++ {
+		for z := 0; z < len(buffer.Arr[i].Str); z++ {
+			str.WriteString(string(buffer.Arr[i].Str[z]))
+			if z != len(buffer.Arr[i].Str)-1 {
+				str.WriteString(" ")
+			}
+		}
+		str.WriteString("\n")
+	}
+
+	return str.String()
+}
+
+func SortProcess(buffer *StringBuffer, fl *FlagsValue) {
+	buffer.SortColNum = fl.K - 1
 	if buffer.SortColNum > buffer.LongestCol {
 		buffer.SortColNum = 0
 	}
 	buffer.Comp = &CompareK{}
 	sort.Sort(buffer)
 
-	if *fl.N {
+	if fl.N {
 		buffer.Comp = &CompareN{}
 		sort.Sort(buffer)
 	}
 
-	if *fl.R {
+	if fl.R {
 		Reverse(buffer)
 	}
 
-	if *fl.U {
+	if fl.U {
 		Unique(buffer, fl)
 	}
 
+}
+
+func InitFlags() *FlagsValue {
+	fv := &FlagsValue{
+		K: 1,
+		N: false,
+		R: false,
+		U: false,
+	}
+
+	for i := 0; i < len(os.Args); i++ {
+		switch os.Args[i] {
+		case "-k":
+			if i < len(os.Args)-1 {
+				num, err := strconv.Atoi(os.Args[i+1])
+				if err != nil {
+					fv.K = -1
+					break
+				}
+				fv.K = num
+			} else {
+				fv.K = -1
+				break
+			}
+		case "-n":
+			fv.N = true
+		case "-r":
+			fv.R = true
+		case "-u":
+			fv.U = true
+		}
+	}
+
+	if fv.K <= 0 {
+		log.Fatal(fmt.Sprintf("sort: field number is zero: invalid field specification '%d'", fv.K))
+	}
+
+	return fv
 }
 
 func Unique(buffer *StringBuffer, fl *FlagsValue) {
