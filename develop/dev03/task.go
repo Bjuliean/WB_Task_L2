@@ -279,6 +279,7 @@ func ParseFile(path string) (*StringBuffer, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer f.Close()
 
 	sc := bufio.NewScanner(f)
 
