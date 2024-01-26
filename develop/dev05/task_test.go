@@ -80,7 +80,6 @@ func TestGrep(t *testing.T) {
 }
 
 func CleanStr(str string) string {
-	//tmp := strings.Split(str, "--")
 	tmp := strings.Split(str, "\n")
 	res := strings.Builder{}
 	res.Grow(len(tmp))
