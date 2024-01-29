@@ -1,6 +1,11 @@
 package main
 
-import "net/http"
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+)
 
 /*
 === HTTP server ===
@@ -24,12 +29,96 @@ import "net/http"
 	4. Код должен проходить проверки go vet и golint.
 */
 
-func main() {
-
+type reqInfo struct {
+	UrlPath string
+	Method  string
 }
 
-func NewServer(addr string) *http.Server {
-	return &http.Server{
-		Addr: addr,
+type Response struct {
+	Status int
+	Body   string
+	Error  string
+}
+
+type ServerHandler struct {
+	hFuncMap       map[reqInfo]func(w http.ResponseWriter, r *http.Request)
+	middlewareList []func(w http.ResponseWriter, r *http.Request)
+	methodList     map[string]struct{}
+}
+
+func NewServerHandler() *ServerHandler {
+	return &ServerHandler{
+		hFuncMap:       make(map[reqInfo]func(w http.ResponseWriter, r *http.Request), 10),
+		middlewareList: make([]func(w http.ResponseWriter, r *http.Request), 0, 10),
+		methodList: map[string]struct{}{
+			http.MethodGet:    {},
+			http.MethodPost:   {},
+			http.MethodPut:    {},
+			http.MethodDelete: {},
+		},
 	}
+}
+
+func (s *ServerHandler) MustAddHandleFunc(method, urlPath string, f func(w http.ResponseWriter, r *http.Request)) {
+	if _, ok := s.methodList[method]; !ok {
+		log.Fatal("MustAddHandleFunc: unknown method\n")
+	}
+
+	s.hFuncMap[reqInfo{
+		UrlPath: urlPath,
+		Method:  method,
+	}] = f
+}
+
+func (s *ServerHandler) AddMiddleware(f func(w http.ResponseWriter, r *http.Request)) {
+	s.middlewareList = append(s.middlewareList, f)
+}
+
+func (s *ServerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	for _, v := range s.middlewareList {
+		v(w, r)
+	}
+
+	if v, ok := s.hFuncMap[reqInfo{
+		UrlPath: r.URL.Path,
+		Method:  r.Method}]; ok {
+		v(w, r)
+	} else {
+		enc := json.NewEncoder(w)
+		enc.Encode(Response{
+			Status: http.StatusBadRequest,
+			Body:   "",
+			Error:  "",
+		})
+	}
+}
+
+func main() {
+	srvHandler := NewServerHandler()
+
+	srvHandler.AddMiddleware(Logger())
+
+	//srvHandler.MustAddHandleFunc("GET", "/", )
+	srvHandler.MustAddHandleFunc("GET", "/haha", GetHaha)
+
+	fmt.Println("STARTING...")
+	err := http.ListenAndServe("0.0.0.0:8081", srvHandler)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func Logger() func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		fmt.Printf("\n========LOGGER========\n")
+
+		fmt.Printf("Method: %s\nURL: %s\nProto: %s\nAddr: %s\nUser-Agent:%s",
+			r.Method, r.URL.Path, r.Proto, r.RemoteAddr, r.Header.Get("User-Agent"))
+
+		fmt.Printf("\n======================\n")
+	}
+}
+
+func GetHaha(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "HAHA")
 }
