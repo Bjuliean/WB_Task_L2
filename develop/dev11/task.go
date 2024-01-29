@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
+	"time"
 )
 
 /*
@@ -36,20 +38,20 @@ type reqInfo struct {
 
 type Response struct {
 	Status int
-	Body   string
+	Body   Event
 	Error  string
 }
 
 type ServerHandler struct {
 	hFuncMap       map[reqInfo]func(w http.ResponseWriter, r *http.Request)
-	middlewareList []func(w http.ResponseWriter, r *http.Request)
+	middlewareList []func(w http.ResponseWriter, r *http.Request) error
 	methodList     map[string]struct{}
 }
 
 func NewServerHandler() *ServerHandler {
 	return &ServerHandler{
 		hFuncMap:       make(map[reqInfo]func(w http.ResponseWriter, r *http.Request), 10),
-		middlewareList: make([]func(w http.ResponseWriter, r *http.Request), 0, 10),
+		middlewareList: make([]func(w http.ResponseWriter, r *http.Request) error, 0, 10),
 		methodList: map[string]struct{}{
 			http.MethodGet:    {},
 			http.MethodPost:   {},
@@ -70,13 +72,17 @@ func (s *ServerHandler) MustAddHandleFunc(method, urlPath string, f func(w http.
 	}] = f
 }
 
-func (s *ServerHandler) AddMiddleware(f func(w http.ResponseWriter, r *http.Request)) {
+func (s *ServerHandler) AddMiddleware(f func(w http.ResponseWriter, r *http.Request) error) {
 	s.middlewareList = append(s.middlewareList, f)
 }
 
 func (s *ServerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	for _, v := range s.middlewareList {
-		v(w, r)
+	var err error
+	for i := 0; i < len(s.middlewareList); i++ {
+		err = s.middlewareList[i](w, r)
+		if err != nil {
+			return
+		}
 	}
 
 	if v, ok := s.hFuncMap[reqInfo{
@@ -84,10 +90,9 @@ func (s *ServerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Method:  r.Method}]; ok {
 		v(w, r)
 	} else {
-		enc := json.NewEncoder(w)
-		enc.Encode(Response{
+		json.NewEncoder(w).Encode(Response{
 			Status: http.StatusBadRequest,
-			Body:   "",
+			Body:   Event{},
 			Error:  "",
 		})
 	}
@@ -96,29 +101,215 @@ func (s *ServerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func main() {
 	srvHandler := NewServerHandler()
 
+	events := NewEvents()
+
 	srvHandler.AddMiddleware(Logger())
 
-	//srvHandler.MustAddHandleFunc("GET", "/", )
-	srvHandler.MustAddHandleFunc("GET", "/haha", GetHaha)
+	srvHandler.MustAddHandleFunc("POST", "/create_event", events.CreateEvent)
+	srvHandler.MustAddHandleFunc("POST", "/update_event", events.UpdateEvent)
+	srvHandler.MustAddHandleFunc("POST", "/delete_event", events.DeleteEvent)
+	srvHandler.MustAddHandleFunc("GET", "/events_for_day", events.EventsForDay)
+	srvHandler.MustAddHandleFunc("GET", "/events_for_week", events.EventsForWeek)
+	srvHandler.MustAddHandleFunc("GET", "/events_for_month", events.EventsForMonth)
 
 	fmt.Println("STARTING...")
-	err := http.ListenAndServe("0.0.0.0:8081", srvHandler)
-	if err != nil {
-		log.Fatal(err)
-	}
+	log.Fatal(http.ListenAndServe("0.0.0.0:8081", srvHandler))
 }
 
-func Logger() func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
+func Logger() func(http.ResponseWriter, *http.Request) error {
+	return func(w http.ResponseWriter, r *http.Request) error {
 		fmt.Printf("\n========LOGGER========\n")
 
 		fmt.Printf("Method: %s\nURL: %s\nProto: %s\nAddr: %s\nUser-Agent:%s",
 			r.Method, r.URL.Path, r.Proto, r.RemoteAddr, r.Header.Get("User-Agent"))
 
 		fmt.Printf("\n======================\n")
+
+		return nil
 	}
 }
 
-func GetHaha(w http.ResponseWriter, r *http.Request) {
+type Event struct {
+	ID     int       `json:"id"`
+	UserID int       `json:"user_id"`
+	Title  string    `json:"title"`
+	Info   string    `json:"info"`
+	Date   time.Time `json:"date"`
+}
+
+type Events map[int][]Event // key = user id
+
+func NewEvents() Events {
+	return make(map[int][]Event, 10)
+}
+
+func (e *Events) CreateEvent(w http.ResponseWriter, r *http.Request) {
+	var ev Event
+	err := json.NewDecoder(r.Body).Decode(&ev)
+	if err != nil {
+		json.NewEncoder(w).Encode(Response{
+			Status: http.StatusBadRequest,
+			Body:   Event{},
+			Error:  err.Error(),
+		})
+		return
+	}
+
+	if _, ok := (*e)[ev.UserID]; ok {
+		json.NewEncoder(w).Encode(Response{
+			Status: http.StatusBadRequest,
+			Body:   Event{},
+			Error:  "already exists",
+		})
+		return
+	}
+
+	for _, v := range (*e)[ev.UserID] {
+		if v.ID == ev.ID {
+			json.NewEncoder(w).Encode(Response{
+				Status: http.StatusBadRequest,
+				Body:   Event{},
+				Error:  "already exists",
+			})
+			return
+		}
+	}
+
+	(*e)[ev.UserID] = append((*e)[ev.UserID], ev)
+
+	json.NewEncoder(w).Encode(Response{
+		Status: http.StatusOK,
+		Body:   ev,
+		Error:  "",
+	})
+}
+
+func (e *Events) UpdateEvent(w http.ResponseWriter, r *http.Request) {
+	var ev Event
+
+	err := json.NewDecoder(r.Body).Decode(&ev)
+	if err != nil {
+		json.NewEncoder(w).Encode(Response{
+			Status: http.StatusBadRequest,
+			Body:   Event{},
+			Error:  err.Error(),
+		})
+		return
+	}
+
+	if _, ok := (*e)[ev.UserID]; !ok {
+		json.NewEncoder(w).Encode(Response{
+			Status: http.StatusBadRequest,
+			Body:   Event{},
+			Error:  "not found",
+		})
+		return
+	}
+
+	var tmp *Event
+	for i := 0; i < len((*e)[ev.UserID]); i++ {
+		if i == len((*e)[ev.UserID])-1 && (*e)[ev.UserID][i].ID != ev.ID {
+			json.NewEncoder(w).Encode(Response{
+				Status: http.StatusBadRequest,
+				Body:   Event{},
+				Error:  "not found",
+			})
+			return
+		}
+		if (*e)[ev.UserID][i].ID == ev.ID {
+			tmp = &(*e)[ev.UserID][i]
+			break
+		}
+	}
+
+	*tmp = ev
+	json.NewEncoder(w).Encode(Response{
+		Status: http.StatusOK,
+		Body:   ev,
+		Error:  "",
+	})
+}
+
+func (e *Events) DeleteEvent(w http.ResponseWriter, r *http.Request) {
+	var ev Event
+
+	err := json.NewDecoder(r.Body).Decode(&ev)
+	if err != nil {
+		json.NewEncoder(w).Encode(Response{
+			Status: http.StatusBadRequest,
+			Body:   Event{},
+			Error:  err.Error(),
+		})
+		return
+	}
+
+	if _, ok := (*e)[ev.UserID]; !ok {
+		json.NewEncoder(w).Encode(Response{
+			Status: http.StatusBadRequest,
+			Body:   Event{},
+			Error:  "not found",
+		})
+		return
+	}
+
+	tmp := 0
+	for i := 0; i < len((*e)[ev.UserID]); i++ {
+		if i == len((*e)[ev.UserID])-1 && (*e)[ev.UserID][i].ID != ev.ID {
+			json.NewEncoder(w).Encode(Response{
+				Status: http.StatusBadRequest,
+				Body:   Event{},
+				Error:  "not found",
+			})
+			return
+		}
+		if (*e)[ev.UserID][i].ID == ev.ID {
+			tmp = i
+			break
+		}
+	}
+
+	(*e)[ev.UserID] = append((*e)[ev.UserID][:tmp], (*e)[ev.UserID][tmp+1:]...)
+	json.NewEncoder(w).Encode(Response{
+		Status: http.StatusOK,
+		Body:   Event{},
+		Error:  "",
+	})
+}
+
+func (e *Events) EventsForDay(w http.ResponseWriter, r *http.Request) {
+	usrID, err := strconv.Atoi(r.URL.Query().Get("user_id"))
+	if err != nil {
+		json.NewEncoder(w).Encode(Response{
+			Status: http.StatusBadRequest,
+			Body:   Event{},
+			Error:  err.Error(),
+		})
+		return
+	}
+
+	date, err := time.Parse("2006-01-02", r.URL.Query().Get("date"))
+	if err != nil {
+		json.NewEncoder(w).Encode(Response{
+			Status: http.StatusServiceUnavailable,
+			Body:   Event{},
+			Error:  err.Error(),
+		})
+		return
+	}
+
+	// for _, v := range (*e)[usrID] {
+	// 	if v.Date == date {
+
+
+	// 		return
+	// 	}
+	// }
+}
+
+func (e *Events) EventsForWeek(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "HAHA")
+}
+
+func (e *Events) EventsForMonth(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "HAHA")
 }
