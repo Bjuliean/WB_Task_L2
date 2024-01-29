@@ -38,7 +38,7 @@ type reqInfo struct {
 
 type Response struct {
 	Status int
-	Body   Event
+	Body   []Event
 	Error  string
 }
 
@@ -92,11 +92,15 @@ func (s *ServerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		json.NewEncoder(w).Encode(Response{
 			Status: http.StatusBadRequest,
-			Body:   Event{},
+			Body:   []Event{},
 			Error:  "",
 		})
 	}
 }
+
+const(
+	PORT = ":8081"
+)
 
 func main() {
 	srvHandler := NewServerHandler()
@@ -113,7 +117,7 @@ func main() {
 	srvHandler.MustAddHandleFunc("GET", "/events_for_month", events.EventsForMonth)
 
 	fmt.Println("STARTING...")
-	log.Fatal(http.ListenAndServe("0.0.0.0:8081", srvHandler))
+	log.Fatal(http.ListenAndServe("0.0.0.0"+PORT, srvHandler))
 }
 
 func Logger() func(http.ResponseWriter, *http.Request) error {
@@ -144,31 +148,25 @@ func NewEvents() Events {
 }
 
 func (e *Events) CreateEvent(w http.ResponseWriter, r *http.Request) {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "   ")
+	
 	var ev Event
 	err := json.NewDecoder(r.Body).Decode(&ev)
 	if err != nil {
-		json.NewEncoder(w).Encode(Response{
+		enc.Encode(Response{
 			Status: http.StatusBadRequest,
-			Body:   Event{},
+			Body:   []Event{},
 			Error:  err.Error(),
-		})
-		return
-	}
-
-	if _, ok := (*e)[ev.UserID]; ok {
-		json.NewEncoder(w).Encode(Response{
-			Status: http.StatusBadRequest,
-			Body:   Event{},
-			Error:  "already exists",
 		})
 		return
 	}
 
 	for _, v := range (*e)[ev.UserID] {
 		if v.ID == ev.ID {
-			json.NewEncoder(w).Encode(Response{
+			enc.Encode(Response{
 				Status: http.StatusBadRequest,
-				Body:   Event{},
+				Body:   []Event{},
 				Error:  "already exists",
 			})
 			return
@@ -177,30 +175,33 @@ func (e *Events) CreateEvent(w http.ResponseWriter, r *http.Request) {
 
 	(*e)[ev.UserID] = append((*e)[ev.UserID], ev)
 
-	json.NewEncoder(w).Encode(Response{
+	enc.Encode(Response{
 		Status: http.StatusOK,
-		Body:   ev,
+		Body:   []Event{ev},
 		Error:  "",
 	})
 }
 
 func (e *Events) UpdateEvent(w http.ResponseWriter, r *http.Request) {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "   ")
+	
 	var ev Event
 
 	err := json.NewDecoder(r.Body).Decode(&ev)
 	if err != nil {
-		json.NewEncoder(w).Encode(Response{
+		enc.Encode(Response{
 			Status: http.StatusBadRequest,
-			Body:   Event{},
+			Body:   []Event{},
 			Error:  err.Error(),
 		})
 		return
 	}
 
 	if _, ok := (*e)[ev.UserID]; !ok {
-		json.NewEncoder(w).Encode(Response{
+		enc.Encode(Response{
 			Status: http.StatusBadRequest,
-			Body:   Event{},
+			Body:   []Event{},
 			Error:  "not found",
 		})
 		return
@@ -209,9 +210,9 @@ func (e *Events) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	var tmp *Event
 	for i := 0; i < len((*e)[ev.UserID]); i++ {
 		if i == len((*e)[ev.UserID])-1 && (*e)[ev.UserID][i].ID != ev.ID {
-			json.NewEncoder(w).Encode(Response{
+			enc.Encode(Response{
 				Status: http.StatusBadRequest,
-				Body:   Event{},
+				Body:   []Event{},
 				Error:  "not found",
 			})
 			return
@@ -223,30 +224,33 @@ func (e *Events) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	*tmp = ev
-	json.NewEncoder(w).Encode(Response{
+	enc.Encode(Response{
 		Status: http.StatusOK,
-		Body:   ev,
+		Body:   []Event{ev},
 		Error:  "",
 	})
 }
 
 func (e *Events) DeleteEvent(w http.ResponseWriter, r *http.Request) {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "   ")
+	
 	var ev Event
 
 	err := json.NewDecoder(r.Body).Decode(&ev)
 	if err != nil {
-		json.NewEncoder(w).Encode(Response{
+		enc.Encode(Response{
 			Status: http.StatusBadRequest,
-			Body:   Event{},
+			Body:   []Event{},
 			Error:  err.Error(),
 		})
 		return
 	}
 
 	if _, ok := (*e)[ev.UserID]; !ok {
-		json.NewEncoder(w).Encode(Response{
+		enc.Encode(Response{
 			Status: http.StatusBadRequest,
-			Body:   Event{},
+			Body:   []Event{},
 			Error:  "not found",
 		})
 		return
@@ -255,9 +259,9 @@ func (e *Events) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 	tmp := 0
 	for i := 0; i < len((*e)[ev.UserID]); i++ {
 		if i == len((*e)[ev.UserID])-1 && (*e)[ev.UserID][i].ID != ev.ID {
-			json.NewEncoder(w).Encode(Response{
+			enc.Encode(Response{
 				Status: http.StatusBadRequest,
-				Body:   Event{},
+				Body:   []Event{},
 				Error:  "not found",
 			})
 			return
@@ -269,19 +273,22 @@ func (e *Events) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	(*e)[ev.UserID] = append((*e)[ev.UserID][:tmp], (*e)[ev.UserID][tmp+1:]...)
-	json.NewEncoder(w).Encode(Response{
+	enc.Encode(Response{
 		Status: http.StatusOK,
-		Body:   Event{},
+		Body:   []Event{},
 		Error:  "",
 	})
 }
 
 func (e *Events) EventsForDay(w http.ResponseWriter, r *http.Request) {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "   ")
+
 	usrID, err := strconv.Atoi(r.URL.Query().Get("user_id"))
 	if err != nil {
-		json.NewEncoder(w).Encode(Response{
+		enc.Encode(Response{
 			Status: http.StatusBadRequest,
-			Body:   Event{},
+			Body:   []Event{},
 			Error:  err.Error(),
 		})
 		return
@@ -289,27 +296,100 @@ func (e *Events) EventsForDay(w http.ResponseWriter, r *http.Request) {
 
 	date, err := time.Parse("2006-01-02", r.URL.Query().Get("date"))
 	if err != nil {
-		json.NewEncoder(w).Encode(Response{
+		enc.Encode(Response{
 			Status: http.StatusServiceUnavailable,
-			Body:   Event{},
+			Body:   []Event{},
 			Error:  err.Error(),
 		})
 		return
 	}
 
-	// for _, v := range (*e)[usrID] {
-	// 	if v.Date == date {
+	var evList []Event
+	for _, v := range (*e)[usrID] {
+		if v.Date.Day() == date.Day() && v.Date.Month() == date.Month() && v.Date.Year() == date.Year() {
+			evList = append(evList, v)
+		}
+	}
 
-
-	// 		return
-	// 	}
-	// }
+	enc.Encode(Response{
+		Status: http.StatusOK,
+		Body:   evList,
+		Error:  "",
+	})
 }
 
 func (e *Events) EventsForWeek(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "HAHA")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "   ")
+
+	usrID, err := strconv.Atoi(r.URL.Query().Get("user_id"))
+	if err != nil {
+		enc.Encode(Response{
+			Status: http.StatusBadRequest,
+			Body:   []Event{},
+			Error:  err.Error(),
+		})
+		return
+	}
+
+	date, err := time.Parse("2006-01-02", r.URL.Query().Get("date"))
+	if err != nil {
+		enc.Encode(Response{
+			Status: http.StatusServiceUnavailable,
+			Body:   []Event{},
+			Error:  err.Error(),
+		})
+		return
+	}
+
+	var evList []Event
+	for _, v := range (*e)[usrID] {
+		if v.Date.Day() <= date.Day() + 6 {
+			evList = append(evList, v)
+		}
+	}
+
+	enc.Encode(Response{
+		Status: http.StatusOK,
+		Body:   evList,
+		Error:  "",
+	})
 }
 
 func (e *Events) EventsForMonth(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "HAHA")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "   ")
+
+	usrID, err := strconv.Atoi(r.URL.Query().Get("user_id"))
+	if err != nil {
+		enc.Encode(Response{
+			Status: http.StatusBadRequest,
+			Body:   []Event{},
+			Error:  err.Error(),
+		})
+		return
+	}
+
+	date, err := time.Parse("2006-01-02", r.URL.Query().Get("date"))
+	if err != nil {
+		enc.Encode(Response{
+			Status: http.StatusServiceUnavailable,
+			Body:   []Event{},
+			Error:  err.Error(),
+		})
+		return
+	}
+
+	var evList []Event
+	for _, v := range (*e)[usrID] {
+		if v.Date.Month() == date.Month() && v.Date.Year() == date.Year() {
+			evList = append(evList, v)
+		}
+	}
+
+	enc.Encode(Response{
+		Status: http.StatusOK,
+		Body:   evList,
+		Error:  "",
+	})
 }
