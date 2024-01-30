@@ -132,7 +132,7 @@ func StrategyExample() {
 
 func StateExample() {
 	fmt.Printf("---------------------------------\nSTATE EXAMPLE\n")
-	
+
 	var ye pattern.State = &pattern.YellowState{}
 	tf := pattern.NewTrafficLight(&ye)
 
